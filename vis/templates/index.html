@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PRD 流动模式标注平台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/d3.v7.min.js"></script>
+  <script src="/static/vendor/html2canvas.min.js"></script>
+  <script>
+    if (!window.d3) {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/d3@7"><\/script>');
+    }
+  </script>
+  <script>
+    // 显示用：标签编号 -> 标签名称（9 类 + 0=其他）
+    const LABEL_MAP = {
+      1: '稳定静态性',
+      2: '稳定聚集性',
+      3: '稳定扩散性',
+      4: '增长静态型',
+      5: '增长聚集型',
+      6: '增长扩散型',
+      7: '衰减静态型',
+      8: '衰减聚集型',
+      9: '衰减扩散型'
+    };
+  </script>
+</head>
+<body>
+  <div class="app">
+    <div class="left">
+      <div class="toolbar">
+        <div class="row compact">
+          年份：
+          <select id="yearSelect"></select>
+          方向：
+          <select id="directionSelect">
+            <option value="both">双向</option>
+            <option value="out">流出</option>
+            <option value="in">流入</option>
+          </select>
+          TopK：<input id="topkInput" type="number" min="5" max="1000" value="100" style="width:70px;">
+          <button id="clearBtn">清除流线</button>
+          <button id="openOverlayBtn" class="ghost">筛选与显示设置</button>
+        </div>
+        <div class="row grid-search">
+          格网ID：
+          <input id="gridIdInput" type="number" min="1" placeholder="输入格网ID" style="width:120px;">
+          <button id="gridIdConfirmBtn">确认</button>
+          <span id="gridLookupStatus" class="grid-lookup-status"></span>
+        </div>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="mapCanvas"></canvas>
+        <canvas id="flowCanvas"></canvas>
+        <div id="controlOverlay" class="overlay-panel hidden">
+          <div class="overlay-header">
+            <strong>显示设置</strong>
+            <button id="closeOverlayBtn" class="ghost">关闭</button>
+          </div>
+          <div class="overlay-section">
+            <div class="row">
+              <span>按年份显示：</span>
+              <label class="year-opt"><input type="checkbox" id="yearChk2018"> <span class="dot" style="background:#ff7f0e"></span>2018</label>
+              <label class="year-opt"><input type="checkbox" id="yearChk2021"> <span class="dot" style="background:#1f77b4"></span>2021</label>
+              <label class="year-opt"><input type="checkbox" id="yearChk2024"> <span class="dot" style="background:#2ca02c"></span>2024</label>
+            </div>
+          </div>
+          <div class="overlay-section">
+            <div class="row">
+              城市：<select id="citySelect"></select>
+              区县：<select id="areaSelect"></select>
+              覆盖率：<input id="covInput" type="number" min="0" max="100" value="80" style="width:70px;">%
+            </div>
+            <div class="row">
+              <label><input type="checkbox" id="showEllipse" checked> 显示置信椭圆</label>
+            </div>
+            <div class="row">
+              <label><input type="checkbox" id="heatToggle"> 显示底图：按年份总流量</label>
+              <label><input type="checkbox" id="outlineToggle"> 显示城市轮廓</label>
+            </div>
+            <div class="row" style="flex-wrap:wrap; gap:10px;">
+              颜色设置：
+              地图底色 <input id="bgColorInput" type="color" value="#ffffff">
+              格网颜色 <input id="gridColorInput" type="color" value="#000000">
+              2018线色 <input id="color2018" type="color" value="#ff7f0e">
+              2021线色 <input id="color2021" type="color" value="#1f77b4">
+              2024线色 <input id="color2024" type="color" value="#2ca02c">
+            </div>
+            <div class="row">
+              关键字：<input id="keywordInput" type="text" placeholder="按城市/区县筛选" style="width:160px;">
+              <button id="resetFilterBtn">重置筛选</button>
+              <span id="filterInfo" style="margin-left:8px;color:#666;">显示格网：-</span>
+            </div>
+          </div>
+          <div class="overlay-footer">
+            <small>提示：勾选多个年份则叠加显示；留空使用上方“年份”单选。</small>
+          </div>
+        </div>
+        <div id="currentInfoPanel" class="overlay-badge">当前格网：<span id="currentInfo">未选择</span></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel">
+        <h3>24 小时曲线</h3>
+        <div class="chart-controls">
+          数据：
+          <label><input type="radio" name="aggMode" id="modeDailyAvg" checked> 周日均</label>
+          <label><input type="radio" name="aggMode" id="modeWeekly"> 周曲线</label>
+          度量：
+          <label><input type="checkbox" id="metricTotal" checked> total</label>
+          <label><input type="checkbox" id="metricOut"> out</label>
+          <label><input type="checkbox" id="metricIn"> in</label>
+          叠加：
+          <label><input type="radio" name="chartMode" id="modeOverlay" checked> 叠加</label>
+          <label><input type="radio" name="chartMode" id="modeSplit"> 分图</label>
+          <span style="margin-left:10px;"></span>
+          <label><input type="checkbox" id="chartFixY"> 固定 y 轴</label>
+          最大值：<input id="chartYMaxInput" type="number" min="1" step="1" value="200" style="width:80px;">
+        </div>
+        <div id="chart"></div>
+      </div>
+      <div class="panel">
+        <h3>标注</h3>
+        <div class="label-controls">
+          <div>
+            <button id="startLabelBtn">开始打标签</button>
+            数量：<input id="labelCount" type="number" min="1" value="20" style="width:60px;">
+            <label style="margin-left:6px;"><input type="checkbox" id="labelWithinFilter" checked> 仅在当前筛选范围抽样</label>
+            <button id="skipBtn" disabled>跳过</button>
+            <button id="undoBtn">撤销上一个</button>
+            <button id="resetQueueBtn">重置队列</button>
+            <button id="clearLabelsBtn">清空标注CSV</button>
+            <a id="downloadLink" href="/api/labels/download">下载CSV</a>
+          </div>
+          <div class="row" style="margin-top:6px; gap:8px; align-items:center;">
+            <label><input type="checkbox" id="enableLowFilter"> 低流量过滤：</label>
+            <span>24 小时日均 ≤</span>
+            <input id="lowValueInput" type="number" min="0" step="1" value="0" style="width:90px;">
+            <span>的小时比例 ≥</span>
+            <input id="lowPctInput" type="number" min="0" max="100" value="30" style="width:70px;">
+            <span>%（排除此类格网不参与抽样）</span>
+          </div>
+          <div class="row" style="margin-top:6px; gap:6px;">
+            <button id="otherLabelBtn">其他（备注）</button>
+            <input id="otherRemark" type="text" placeholder="输入备注" style="flex:1; min-width:200px;">
+            <button id="otherSubmitBtn">提交</button>
+          </div>
+          <div class="label-buttons">
+            <!-- 第一排：7 8 9 -->
+            <button data-l="7">7 衰减静态型</button>
+            <button data-l="8">8 衰减聚集型</button>
+            <button data-l="9">9 衰减扩散型</button>
+            <!-- 第二排：4 5 6 -->
+            <button data-l="4">4 增长静态型</button>
+            <button data-l="5">5 增长聚集型</button>
+            <button data-l="6">6 增长扩散型</button>
+            <!-- 第三排：1 2 3 -->
+            <button data-l="1">1 稳定静态型</button>
+            <button data-l="2">2 稳定聚集型</button>
+            <button data-l="3">3 稳定扩散型</button>
+          </div>
+          <div id="labelStats" class="label-stats"></div>
+          <div id="labelStatus">未开始</div>
+        </div>
+        <div class="panel-sub">
+          <strong>导入已标注 CSV：</strong>
+          <input type="file" id="importFile" accept=".csv">
+          模式：
+          <select id="importMode">
+            <option value="upsert">覆盖同格网（推荐）</option>
+            <option value="append">直接追加</option>
+          </select>
+          <button id="importBtn">导入</button>
+          <span id="importInfo" style="margin-left:6px;color:#666;"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js?v=20251020-1"></script>
+</body>
+<!-- 简易可视化：左侧画布点击格网可查看流线；右侧为小时曲线与标注控件。 -->
+</html>

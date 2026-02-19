@@ -1,0 +1,37 @@
+# Large data files
+vis/data/*.csv
+vis/data/**/*.csv
+vis/data/**/*.shp
+vis/data/**/*.dbf
+vis/data/**/*.shx
+vis/data/**/*.prj
+vis/data/**/*.cpg
+vis/data/**/*.sbn
+vis/data/**/*.sbx
+vis/data/**/*.xml
+vis/data/**/*.lock
+
+# Large appdata files
+vis/appdata/*.parquet
+vis/appdata/*.log
+vis/appdata/*.tmp.json
+vis/appdata/ellipses.json
+
+# Backup labels
+vis/labels/labels_backup_*.csv
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Exclude other directories (only upload vis/)
+Analysis_20251126/
+analysis/
+label_based_on_metric/
+paper/
+site_prd/
+tools/
+
+vis/*.log
+

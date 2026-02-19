@@ -1,0 +1,26 @@
+# exclude raw data (large)
+/data/
+# exclude all outputs directories
+/outputs/
+/outputs*/
+/processed/
+/processed*/
+/data/
+/data*/
+/labels/
+/labels*/
+
+
+# python/cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.csv
+
+# exclude appdata logs and temp files (large)
+/appdata*/
+/appdata/*.log
+/appdata/*.tmp.json
+

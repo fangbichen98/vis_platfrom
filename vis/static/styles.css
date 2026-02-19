@@ -1,0 +1,37 @@
+html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.app { display: flex; height: 100vh; }
+.left { flex: 2; display: flex; flex-direction: column; min-width: 600px; }
+.right { flex: 1; padding: 8px; overflow: auto; border-left: 1px solid #ddd; min-width: 380px; }
+.toolbar { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #0b1223; background: #0b1223; color: #e2e8f0; }
+.toolbar .row { display: flex; align-items: center; gap: 8px; margin: 0; }
+.toolbar .row.compact select, .toolbar .row.compact input { height: 26px; }
+.grid-search { flex-wrap: wrap; font-size: 14px; }
+.grid-search input { height: 26px; }
+.grid-lookup-status { font-size: 12px; color: #94a3b8; min-height: 1em; }
+.grid-lookup-status.error { color: #f87171; }
+.ghost { background: transparent; border: 1px solid #334155; color: #e2e8f0; padding: 4px 8px; border-radius: 6px; }
+.ghost:hover { background: #1f2937; }
+.canvas-wrap { position: relative; flex: 1; background: #ffffff; }
+#mapCanvas, #flowCanvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#flowCanvas { pointer-events: none; }
+.overlay-panel { position: absolute; left: 10px; top: 10px; background: rgba(15, 23, 42, 0.92); color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 8px; max-width: 520px; z-index: 10; }
+.overlay-panel.hidden { display: none; }
+.overlay-panel .row { gap: 8px; }
+.overlay-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.overlay-section { margin: 6px 0; }
+.overlay-footer { margin-top: 6px; color: #94a3b8; }
+.overlay-badge { position: absolute; left: 10px; bottom: 10px; background: rgba(15, 23, 42, 0.85); color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; font-size: 12px; z-index: 10; }
+.panel { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 6px; background: #fff; }
+#chart { height: 300px; }
+.chart-controls { font-size: 12px; color: #333; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.year-opt { display: inline-flex; align-items: center; gap: 4px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
+.label-buttons { margin-top: 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.label-buttons button { padding: 8px; }
+#labelStatus { margin-top: 6px; }
+
+/* 简单的 3 列统计栅格 */
+.label-stats { margin-top: 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; font-size: 12px; color: #444; }
+.label-stats div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#downloadLink { margin-left: 8px; }
+.panel-sub { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd; }
