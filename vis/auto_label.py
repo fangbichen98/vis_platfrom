@@ -9,9 +9,8 @@
 4. 分析空间模式（静态/聚集/扩散）
 5. 判断类型（1-9）
 6. 通过API提交标签（会自动触发前端截图上传到服务器）
-7. 从服务器复制截图并重命名（序号_格网ID_类型.jpg）
-8. 自动跳到下一个格网
-9. 循环直到完成
+7. 自动跳到下一个格网
+8. 循环直到完成
 """
 
 import requests
@@ -101,125 +100,55 @@ class AutoLabeler:
         """前进到下一个格网"""
         return self.fetch_json("label_queue/advance", method="POST")
 
-    def copy_and_rename_screenshot(self, index: int, grid_id: int, label: int, label_name: str):
-        """从服务器复制截图并重命名"""
-        # 服务器上的截图文件名格式: {grid_id}-{label}.jpg
-        source_filename = f"{grid_id}-{label}.jpg"
-        source_path = SHOTS_DIR / source_filename
-
-        # 新文件名格式: {序号:03d}_{grid_id}_{label}{label_name}.jpg
-        target_filename = f"{index:03d}_{grid_id}_{label}{label_name}.jpg"
-        target_path = SCREENSHOTS_DIR / target_filename
-
-        if source_path.exists():
-            try:
-                shutil.copy2(source_path, target_path)
-                print(f"  ✓ 截图已保存: {target_filename}")
-            except Exception as e:
-                print(f"  ⚠ 截图复制失败: {e}")
-        else:
-            print(f"  ⚠ 服务器截图不存在: {source_filename}")
-
     def analyze_trend(self, hourly_data: dict) -> str:
         """
         分析流量趋势：稳定/增长/衰减
 
-        判断逻辑（基于视觉感受，主要看绝对变化量）：
-        - 视觉感受主要基于y轴的绝对值变化
-        - 对于不同流量级别，设定不同的绝对变化阈值
-        - 百分比变化仅在极端情况下作为辅助判断（>100%且绝对值也够大）
-        - 特殊情况：如果绝对变化量不明显且曲线形状相似，判为稳定
+        判断逻辑（按照AUTO_LABEL_README.md的定义）：
+        - 计算2021和2024的日均流量总量
+        - 变化率 > +15% → 增长型
+        - 变化率 < -15% → 衰减型
+        - 其他 → 稳定型
 
         Returns: "stable", "growth", "decay"
         """
         if not hourly_data or "2021" not in hourly_data or "2024" not in hourly_data:
             return "stable"  # 默认
 
-        # 计算日均总量
+        # 计算日均流量总量
         def get_daily_total(year_data):
+            """计算日均流量（注意：这里计算的是真实日均，不是周总量）"""
             if not year_data or "total" not in year_data:
                 return 0
             weeks = year_data["total"][:1]  # 取前1周
             if not weeks:
                 return 0
-            # 计算24小时的平均值
-            hourly_avg = []
+            # 计算1周内24小时的平均值
+            hourly_totals = []
             for h in range(24):
                 total = sum((week[h] if h < len(week) else 0) for week in weeks)
-                hourly_avg.append(total / 1)
-            return sum(hourly_avg), hourly_avg
+                hourly_totals.append(total)
 
-        total_2021, hourly_2021 = get_daily_total(hourly_data["2021"])
-        total_2024, hourly_2024 = get_daily_total(hourly_data["2024"])
+            # 计算周总量，然后除以7得到日均
+            weekly_total = sum(hourly_totals)
+            daily_average = weekly_total / 7.0  # 转换为日均
+            return daily_average
+
+        total_2021 = get_daily_total(hourly_data["2021"])
+        total_2024 = get_daily_total(hourly_data["2024"])
 
         if total_2021 == 0:
-            return "growth" if total_2024 > 200 else "stable"
+            return "growth" if total_2024 > 0 else "stable"
 
-        abs_change = total_2024 - total_2021
-        ratio_change = abs_change / total_2021
+        # 计算变化率
+        change_ratio = (total_2024 - total_2021) / total_2021
 
-        # 基于视觉感受的判断逻辑
-        # 核心思想：在图表上，y轴的刻度是固定的绝对值
-        # 所以视觉感受主要取决于绝对变化量，而非百分比
-
-        # 根据流量基数设置不同的阈值
-        if total_2021 > 2000:
-            # 超大流量格网：绝对变化需要超过1000才算明显
-            threshold = 1000
-        elif total_2021 > 1000:
-            # 大流量格网：绝对变化需要超过900才算明显
-            threshold = 900
-        elif total_2021 > 500:
-            # 中大流量格网：绝对变化需要超过700
-            threshold = 700
-        elif total_2021 > 200:
-            # 中等流量格网：绝对变化需要超过400
-            threshold = 400
-        elif total_2021 > 100:
-            # 中小流量格网：绝对变化需要超过250
-            threshold = 250
-        else:
-            # 小流量格网：绝对变化需要超过200
-            threshold = 200
-
-        # 主要基于绝对变化判断
-        if abs_change > threshold:
+        # 按照README的定义：15%阈值
+        if change_ratio > 0.15:
             return "growth"
-        elif abs_change < -threshold:
+        elif change_ratio < -0.15:
             return "decay"
         else:
-            # 绝对变化不明显时，检查曲线形状相似性
-            # 如果形状相似，视觉上看起来更稳定
-            if len(hourly_2021) == 24 and len(hourly_2024) == 24 and total_2021 > 0 and total_2024 > 0:
-                import statistics
-                try:
-                    # 归一化到0-1范围
-                    min_2021, max_2021 = min(hourly_2021), max(hourly_2021)
-                    min_2024, max_2024 = min(hourly_2024), max(hourly_2024)
-
-                    if max_2021 > min_2021 and max_2024 > min_2024:
-                        norm_2021 = [(h - min_2021) / (max_2021 - min_2021) for h in hourly_2021]
-                        norm_2024 = [(h - min_2024) / (max_2024 - min_2024) for h in hourly_2024]
-
-                        # 计算相关系数
-                        mean_2021 = statistics.mean(norm_2021)
-                        mean_2024 = statistics.mean(norm_2024)
-
-                        if mean_2021 > 0 and mean_2024 > 0:
-                            # 简化的皮尔逊相关系数计算
-                            numerator = sum((n1 - mean_2021) * (n2 - mean_2024) for n1, n2 in zip(norm_2021, norm_2024))
-                            var_2021 = sum((n1 - mean_2021) ** 2 for n1 in norm_2021)
-                            var_2024 = sum((n2 - mean_2024) ** 2 for n2 in norm_2024)
-
-                            if var_2021 > 0 and var_2024 > 0:
-                                correlation = numerator / (var_2021 ** 0.5 * var_2024 ** 0.5)
-
-                                # 如果曲线形状高度相似（相关系数>0.85），视觉上可能看起来稳定
-                                if correlation > 0.85:
-                                    return "stable"
-                except:
-                    pass  # 如果相关系数计算失败，继续返回stable
-
             return "stable"
 
     def get_ellipse_area(self, grid_id: int, year: int) -> Optional[float]:
@@ -247,10 +176,10 @@ class AutoLabeler:
         """
         分析空间模式：静态/聚集/扩散
 
-        判断逻辑（基于2021→2024椭圆面积变化）：
-        - 静态：椭圆面积变化在 ±12% 以内（基本不变）
-        - 扩散：椭圆面积增长超过 12%（向外扩展）
-        - 聚集：椭圆面积减少超过 12%（向内收缩）
+        判断逻辑（基于2021→2024椭圆面积变化，按照AUTO_LABEL_README.md定义）：
+        - 静态：椭圆面积变化在 ±20% 以内（基本不变）
+        - 扩散：椭圆面积增长超过 20%（向外扩展）
+        - 聚集：椭圆面积减少超过 20%（向内收缩）
 
         Returns: "static", "aggregation", "diffusion"
         """
@@ -264,10 +193,10 @@ class AutoLabeler:
 
             change_ratio = (area_2024 - area_2021) / area_2021
 
-            # 调整后的阈值（12%变化认为显著）
-            if change_ratio > 0.12:  # 面积增长超过12% -> 扩散
+            # 按照README的定义：20%阈值
+            if change_ratio > 0.20:  # 面积增长超过20% -> 扩散
                 return "diffusion"
-            elif change_ratio < -0.12:  # 面积减少超过12% -> 聚集
+            elif change_ratio < -0.20:  # 面积减少超过20% -> 聚集
                 return "aggregation"
             else:
                 return "static"
@@ -313,52 +242,43 @@ class AutoLabeler:
             return 0, "其他", {"is_edge_case": False, "error": str(e)}
 
     def _check_edge_case(self, grid_id: int, hourly_data: dict, trend: str, spatial: str) -> dict:
-        """检查是否是边缘案例"""
-        import math
+        """检查是否是边缘案例（按照README定义的阈值）"""
 
         # 获取流量和椭圆数据
         def get_daily_total(year_data):
+            """计算日均流量"""
             if not year_data or "total" not in year_data:
                 return 0
             weeks = year_data["total"][:1]
             if not weeks:
                 return 0
-            hourly_avg = []
+            hourly_totals = []
             for h in range(24):
                 total = sum((week[h] if h < len(week) else 0) for week in weeks)
-                hourly_avg.append(total / 1)
-            return sum(hourly_avg)
+                hourly_totals.append(total)
+            weekly_total = sum(hourly_totals)
+            daily_average = weekly_total / 7.0
+            return daily_average
 
         total_2021 = get_daily_total(hourly_data.get("2021", {}))
         total_2024 = get_daily_total(hourly_data.get("2024", {}))
-        abs_change = total_2024 - total_2021
 
         area_2021 = self.get_ellipse_area(grid_id, 2021)
         area_2024 = self.get_ellipse_area(grid_id, 2024)
 
-        # 确定阈值
-        if total_2021 > 2000:
-            threshold = 1000
-        elif total_2021 > 1000:
-            threshold = 900
-        elif total_2021 > 500:
-            threshold = 700
-        elif total_2021 > 200:
-            threshold = 400
-        elif total_2021 > 100:
-            threshold = 250
-        else:
-            threshold = 200
+        # 流量趋势边缘检测（15%阈值 ± 3%）
+        is_edge_trend = False
+        if total_2021 > 0:
+            flow_change_ratio = (total_2024 - total_2021) / total_2021
+            # 如果在12%-18%之间（阈值15%±3%），认为是边缘
+            is_edge_trend = 0.12 < abs(flow_change_ratio) < 0.18
 
-        # 判断是否接近阈值（±20%以内）
-        is_edge_trend = abs(abs(abs_change) - threshold) / threshold < 0.2
-
-        # 判断椭圆变化是否接近阈值（±3%以内）
+        # 空间模式边缘检测（20%阈值 ± 3%）
         is_edge_spatial = False
         if area_2021 and area_2021 > 0:
             area_change_ratio = (area_2024 - area_2021) / area_2021
-            # 如果在9%-15%之间（阈值12%±3%），认为是边缘
-            is_edge_spatial = 0.09 < abs(area_change_ratio) < 0.15
+            # 如果在17%-23%之间（阈值20%±3%），认为是边缘
+            is_edge_spatial = 0.17 < abs(area_change_ratio) < 0.23
 
         is_edge = is_edge_trend or is_edge_spatial
 
@@ -367,10 +287,10 @@ class AutoLabeler:
             "edge_reason": {
                 "trend_near_threshold": is_edge_trend,
                 "spatial_near_threshold": is_edge_spatial,
-                "flow_change": abs_change,
-                "flow_threshold": threshold,
+                "flow_change_ratio": ((total_2024 - total_2021) / total_2021 * 100) if total_2021 > 0 else None,
+                "flow_threshold": 15.0,
                 "area_change_ratio": ((area_2024 - area_2021) / area_2021 * 100) if area_2021 and area_2021 > 0 else None,
-                "area_threshold": 12.0
+                "area_threshold": 20.0
             },
             "confidence": {
                 "trend": trend,
@@ -413,7 +333,7 @@ class AutoLabeler:
         edge_csv_writer = csv.writer(edge_csv_file)
         edge_csv_writer.writerow([
             'grid_id', 'label', 'label_name',
-            'flow_2021', 'flow_2024', 'flow_change', 'flow_threshold',
+            'flow_2021', 'flow_2024', 'flow_change_ratio', 'flow_threshold',
             'area_change_ratio', 'area_threshold',
             'edge_trend', 'edge_spatial', 'reason'
         ])
@@ -444,21 +364,25 @@ class AutoLabeler:
                     # 获取流量数据
                     hourly_data = self.get_grid_hourly(grid_id)
                     def get_daily_total(year_data):
+                        """计算日均流量"""
                         if not year_data or "total" not in year_data:
                             return 0
                         weeks = year_data["total"][:1]
                         if not weeks:
                             return 0
-                        hourly_avg = []
+                        hourly_totals = []
                         for h in range(24):
                             total = sum((week[h] if h < len(week) else 0) for week in weeks)
-                            hourly_avg.append(total / 1)
-                        return sum(hourly_avg)
+                            hourly_totals.append(total)
+                        weekly_total = sum(hourly_totals)
+                        daily_average = weekly_total / 7.0
+                        return daily_average
 
                     flow_2021 = get_daily_total(hourly_data.get("2021", {}))
                     flow_2024 = get_daily_total(hourly_data.get("2024", {}))
 
                     # 写入边缘案例CSV
+                    flow_ratio = reason.get('flow_change_ratio') or 0
                     area_ratio = reason.get('area_change_ratio') or 0
                     edge_csv_writer.writerow([
                         grid_id,
@@ -466,8 +390,8 @@ class AutoLabeler:
                         label_name,
                         f"{flow_2021:.1f}",
                         f"{flow_2024:.1f}",
-                        f"{reason.get('flow_change', 0):.1f}",
-                        f"{reason.get('flow_threshold', 0):.0f}",
+                        f"{flow_ratio:.1f}%",
+                        f"{reason.get('flow_threshold', 0):.1f}%",
                         f"{area_ratio:.1f}%",
                         f"{reason.get('area_threshold', 0):.1f}%",
                         reason.get('trend_near_threshold', False),
